@@ -11,7 +11,8 @@ STRICT_MODE_ON
 #include "common/common_utils/FileSystem.hpp"
 #include "ros/ros.h"
 #include "sensors/imu/ImuBase.hpp"
-#include "vehicles/multirotor/api/MultirotorRpcLibClient.hpp"
+//#include "vehicles/multirotor/api/MultirotorRpcLibClient.hpp"
+#include "vehicles/car/api/CarRpcLibClient.hpp"
 #include "yaml-cpp/yaml.h"
 #include <airsim_ros_pkgs/GimbalAngleEulerCmd.h>
 #include <airsim_ros_pkgs/GimbalAngleQuatCmd.h>
@@ -79,8 +80,8 @@ struct VelCmd
     double x;
     double y;
     double z;
-    msr::airlib::DrivetrainType drivetrain;
-    msr::airlib::YawMode yaw_mode;
+    //msr::airlib::DrivetrainType drivetrain;
+    //msr::airlib::YawMode yaw_mode;
     std::string vehicle_name;
 
     // VelCmd() : 
@@ -133,7 +134,8 @@ public:
 private:
     /// ROS timer callbacks
     void img_response_timer_cb(const ros::TimerEvent& event); // update images from airsim_client_ every nth sec
-    void drone_state_timer_cb(const ros::TimerEvent& event); // update drone state from airsim_client_ every nth sec
+    //void drone_state_timer_cb(const ros::TimerEvent& event); // update drone state from airsim_client_ every nth sec
+    void car_state_timer_cb(const ros::TimerEvent& event); // update car state from airsim_client_ every nth sec
     void lidar_timer_cb(const ros::TimerEvent& event);
 
     /// ROS subscriber callbacks
@@ -154,6 +156,7 @@ private:
     // void set_zero_vel_cmd();
 
     /// ROS service callbacks
+    //TODO
     bool takeoff_srv_cb(airsim_ros_pkgs::Takeoff::Request& request, airsim_ros_pkgs::Takeoff::Response& response, const std::string& vehicle_name);
     bool takeoff_group_srv_cb(airsim_ros_pkgs::TakeoffGroup::Request& request, airsim_ros_pkgs::TakeoffGroup::Response& response);
     bool takeoff_all_srv_cb(airsim_ros_pkgs::Takeoff::Request& request, airsim_ros_pkgs::Takeoff::Response& response);
@@ -189,7 +192,7 @@ private:
     msr::airlib::Quaternionr get_airlib_quat(const geometry_msgs::Quaternion& geometry_msgs_quat) const;
     msr::airlib::Quaternionr get_airlib_quat(const tf2::Quaternion& tf2_quat) const;
 
-    nav_msgs::Odometry get_odom_msg_from_airsim_state(const msr::airlib::MultirotorState& drone_state) const;
+    nav_msgs::Odometry get_odom_msg_from_airsim_state(const msr::airlib::CarState& car_state) const;
     airsim_ros_pkgs::GPSYaw get_gps_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
     sensor_msgs::NavSatFix get_gps_sensor_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
     sensor_msgs::Imu get_imu_msg_from_airsim(const msr::airlib::ImuBase::Output& imu_data);
@@ -213,7 +216,7 @@ private:
     ros::ServiceServer land_group_srvr_;
 
     // utility struct for a SINGLE robot
-    struct MultiRotorROS
+    struct CarROS
     {
         std::string vehicle_name;
 
@@ -229,7 +232,7 @@ private:
         ros::ServiceServer land_srvr;
 
         /// State
-        msr::airlib::MultirotorState curr_drone_state;
+        msr::airlib::CarState curr_car_state;
         // bool in_air_; // todo change to "status" and keep track of this
         nav_msgs::Odometry curr_odom_ned;
         sensor_msgs::NavSatFix gps_sensor_msg;
@@ -248,7 +251,7 @@ private:
     msr::airlib::GeoPoint origin_geo_point_;// gps coord of unreal origin 
     airsim_ros_pkgs::GPSYaw origin_geo_point_msg_; // todo duplicate
 
-    std::vector<MultiRotorROS> multirotor_ros_vec_;
+    std::vector<CarROS> car_ros_vec_;
 
     std::vector<string> vehicle_names_;
     std::vector<VehicleSetting> vehicle_setting_vec_;
@@ -260,9 +263,9 @@ private:
     std::vector<geometry_msgs::TransformStamped> static_tf_msg_vec_;
     bool is_vulkan_; // rosparam obtained from launch file. If vulkan is being used, we BGR encoding instead of RGB
 
-    msr::airlib::MultirotorRpcLibClient airsim_client_;
-    msr::airlib::MultirotorRpcLibClient airsim_client_images_;
-    msr::airlib::MultirotorRpcLibClient airsim_client_lidar_;
+    msr::airlib::CarRpcLibClient airsim_client_;
+    msr::airlib::CarRpcLibClient airsim_client_images_;
+    msr::airlib::CarRpcLibClient airsim_client_lidar_;
 
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -273,7 +276,8 @@ private:
     ros::CallbackQueue lidar_timer_cb_queue_;
 
     // todo race condition
-    std::recursive_mutex drone_control_mutex_;
+    //std::recursive_mutex drone_control_mutex_;
+    std::recursive_mutex car_control_mutex_;
     // std::recursive_mutex img_mutex_;
     // std::recursive_mutex lidar_mutex_;
 
