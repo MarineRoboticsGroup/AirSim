@@ -1,3 +1,5 @@
+This is a fork of the original AisSim. Modifications were made in the ros folder to make the wrapper work for cars in ROS. The original package only provides a wrapper for drones which cannot be used to extract data to ROS. With the modifications, you will have access to LIDAR scan, RBGD camera data, IMU data, GPS, and ground truth odometry in ROS. Please follow the guideline in the original package to build, install and use Unreal Engine, AirSim and the ROS wrapper. The only different things you need to do are to clone my fork and move a setting file, ros/src/airsim_ros_pkgs/setting/setting.json, to ~/Documents/AirSim/.
+
 # Welcome to AirSim
 
 AirSim is a simulator for drones, cars and more, built on [Unreal Engine](https://www.unrealengine.com/) (we now also have an experimental [Unity](https://unity3d.com/) release). It is open-source, cross platform, and supports hardware-in-loop with popular flight controllers such as PX4 for physically and visually realistic simulations. It is developed as an Unreal plugin that can simply be dropped into any Unreal environment. Similarly, we have an experimental release for a Unity plugin.
