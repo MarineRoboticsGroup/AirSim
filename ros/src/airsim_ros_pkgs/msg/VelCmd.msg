@@ -1,2 +1,4 @@
-geometry_msgs/Twist twist
+float64 throttle
+float64 steering
+float64 brake
 # string vehicle_name

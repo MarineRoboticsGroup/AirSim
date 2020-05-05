@@ -80,23 +80,6 @@ struct VelCmd
     double throttle;
     double steering;
     double brake;
-    //msr::airlib::DrivetrainType drivetrain;
-    //msr::airlib::YawMode yaw_mode;
-    std::string vehicle_name;
-
-    // VelCmd() : 
-    //     x(0), y(0), z(0), 
-    //     vehicle_name("") {drivetrain = msr::airlib::DrivetrainType::MaxDegreeOfFreedom;
-    //             yaw_mode = msr::airlib::YawMode();};
-
-    // VelCmd(const double& x, const double& y, const double& z, 
-    //         msr::airlib::DrivetrainType drivetrain, 
-    //         const msr::airlib::YawMode& yaw_mode,
-    //         const std::string& vehicle_name) : 
-    //     x(x), y(y), z(z), 
-    //     drivetrain(drivetrain), 
-    //     yaw_mode(yaw_mode), 
-    //     vehicle_name(vehicle_name) {};
 };
 
 
@@ -124,6 +107,7 @@ private:
     //void drone_state_timer_cb(const ros::TimerEvent& event); // update drone state from airsim_client_ every nth sec
     void car_state_timer_cb(const ros::TimerEvent& event); // update car state from airsim_client_ every nth sec
     void lidar_timer_cb(const ros::TimerEvent& event);
+    void vel_cmd_body_frame_cb(const airsim_ros_pkgs::VelCmd::ConstPtr& msg, const std::string& vehicle_name);
 
     ros::Time make_ts(uint64_t unreal_ts);
     // void set_zero_vel_cmd();
@@ -157,7 +141,8 @@ private:
 
     nav_msgs::Odometry get_odom_msg_from_airsim_state(const msr::airlib::CarApiBase::CarState& car_state) const;
     airsim_ros_pkgs::GPSYaw get_gps_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
-    sensor_msgs::NavSatFix get_gps_sensor_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
+    //sensor_msgs::NavSatFix get_gps_sensor_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const;
+    sensor_msgs::NavSatFix get_gps_msg_from_airsim(const msr::airlib::GpsBase::Output& gps_data);
     sensor_msgs::Imu get_imu_msg_from_airsim(const msr::airlib::ImuBase::Output& imu_data);
     sensor_msgs::PointCloud2 get_lidar_msg_from_airsim(const msr::airlib::LidarData& lidar_data) const;
 
@@ -172,14 +157,16 @@ private:
         std::string vehicle_name;
 
         /// All things ROS
-        ros::Publisher global_gps_pub;
+        ros::Publisher odom_local_ned_pub;
         // ros::Publisher home_geo_point_pub_; // geo coord of unreal origin
 
         /// State
         msr::airlib::CarApiBase::CarState curr_car_state;
         // bool in_air_; // todo change to "status" and keep track of this
         nav_msgs::Odometry curr_odom_ned;
-        sensor_msgs::NavSatFix gps_sensor_msg;
+        ros::Subscriber vel_cmd_body_frame_sub;
+        bool has_vel_cmd;
+        VelCmd vel_cmd;
 
         std::string odom_frame_id;
         /// Status
@@ -199,9 +186,11 @@ private:
     std::unordered_map<std::string, int> vehicle_name_idx_map_;
     static const std::unordered_map<int, std::string> image_type_int_to_string_map_;
     std::map<std::string, std::string> vehicle_imu_map_;
+    std::map<std::string, std::string> vehicle_gps_map_;
     std::map<std::string, std::string> vehicle_lidar_map_;
     std::vector<geometry_msgs::TransformStamped> static_tf_msg_vec_;
     bool is_vulkan_; // rosparam obtained from launch file. If vulkan is being used, we BGR encoding instead of RGB
+    bool auto_control_; // rosparam obtained from launch file. If auto control is being used, the car is driven by algorithms.
 
     msr::airlib::CarRpcLibClient airsim_client_;
     msr::airlib::CarRpcLibClient airsim_client_images_;
@@ -241,6 +230,7 @@ private:
     std::vector<ros::Publisher> cam_info_pub_vec_;
     std::vector<ros::Publisher> lidar_pub_vec_;
     std::vector<ros::Publisher> imu_pub_vec_;
+    std::vector<ros::Publisher> gps_pub_vec_;
 
     std::vector<sensor_msgs::CameraInfo> camera_info_msg_vec_;
 

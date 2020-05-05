@@ -35,8 +35,8 @@ AirsimROSWrapper::AirsimROSWrapper(const ros::NodeHandle& nh, const ros::NodeHan
 {
     is_used_lidar_timer_cb_queue_ = false;
     is_used_img_timer_cb_queue_ = false;
-
-    world_frame_id_ = "world_ned"; // todo rosparam?
+    nh_private_.getParam("world_frame_id", world_frame_id_);
+    //world_frame_id_ = "world_ned"; // todo rosparam?
 
     initialize_ros();
 
@@ -57,7 +57,11 @@ void AirsimROSWrapper::initialize_airsim()
 
         for (const auto& vehicle_name : vehicle_names_)
         {
+            nh_private_.getParam("auto_control",auto_control_);
             airsim_client_.enableApiControl(false, vehicle_name); // todo expose as rosservice?
+            if(auto_control_){
+                airsim_client_.enableApiControl(true, vehicle_name);       
+            }
             //airsim_client_.armDisarm(true, vehicle_name); // todo exposes as rosservice?
         }
 
@@ -125,7 +129,10 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
         CarROS car_ros;
         car_ros.odom_frame_id = curr_vehicle_name + "/odom_local_ned";
         car_ros.vehicle_name = curr_vehicle_name;
-        car_ros.global_gps_pub = nh_private_.advertise<sensor_msgs::NavSatFix>(curr_vehicle_name + "/global_gps", 10);
+        car_ros.odom_local_ned_pub = nh_private_.advertise<nav_msgs::Odometry>(curr_vehicle_name + "/odom_local_ned", 10);
+        car_ros.vel_cmd_body_frame_sub = nh_private_.subscribe<airsim_ros_pkgs::VelCmd>(curr_vehicle_name + "/vel_cmd_body_frame", 1, 
+            boost::bind(&AirsimROSWrapper::vel_cmd_body_frame_cb, this, _1, car_ros.vehicle_name)); // todo ros::TransportHints().tcpNoDelay();
+
 
         // bind to a single callback. todo optimal subs queue length
         // bind multiple topics to a single callback, but keep track of which vehicle name it was by passing curr_vehicle_name as the 2nd argument 
@@ -199,7 +206,9 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
                 }
                 case SensorBase::SensorType::Gps:
                 {
+                    vehicle_gps_map_[curr_vehicle_name] = sensor_name; 
                     std::cout << "Gps" << std::endl; 
+                    gps_pub_vec_.push_back(nh_private_.advertise<sensor_msgs::NavSatFix> (curr_vehicle_name + "/gps/" + sensor_name, 10));
                     break;
                 }
                 case SensorBase::SensorType::Magnetometer:
@@ -277,7 +286,15 @@ ros::Time AirsimROSWrapper::make_ts(uint64_t unreal_ts) {
         first_imu_unreal_ts = unreal_ts;
         first_imu_ros_ts = ros::Time::now();
     }
-    return  first_imu_ros_ts + ros::Duration( (unreal_ts- first_imu_unreal_ts)/1e9);
+    //std::cout <<"unreal time:" << unreal_ts << std::endl;
+    //std::cout <<"first_imu_unreal_ts:" << first_imu_unreal_ts << std::endl;
+    //it possible that first_imu_unreal_ts may not be the fisrt unreal time stamp
+    if (unreal_ts > first_imu_unreal_ts){
+        return  first_imu_ros_ts + ros::Duration( (unreal_ts - first_imu_unreal_ts)/1e9);
+    }
+    else{
+        return  first_imu_ros_ts - ros::Duration( (- unreal_ts + first_imu_unreal_ts)/1e9);
+    }
 }
 
 tf2::Quaternion AirsimROSWrapper::get_tf2_quat(const msr::airlib::Quaternionr& airlib_quat) const
@@ -293,6 +310,45 @@ msr::airlib::Quaternionr AirsimROSWrapper::get_airlib_quat(const geometry_msgs::
 msr::airlib::Quaternionr AirsimROSWrapper::get_airlib_quat(const tf2::Quaternion& tf2_quat) const
 {
     return msr::airlib::Quaternionr(tf2_quat.w(), tf2_quat.x(), tf2_quat.y(), tf2_quat.z()); 
+}
+
+
+// void AirsimROSWrapper::vel_cmd_body_frame_cb(const airsim_ros_pkgs::VelCmd& msg, const std::string& vehicle_name)
+void AirsimROSWrapper::vel_cmd_body_frame_cb(const airsim_ros_pkgs::VelCmd::ConstPtr& msg, const std::string& vehicle_name)
+{
+    std::lock_guard<std::recursive_mutex> guard(car_control_mutex_);
+
+    int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
+
+    // todo do actual body frame?
+    car_ros_vec_[vehicle_idx].vel_cmd.throttle = msg->throttle;
+    car_ros_vec_[vehicle_idx].vel_cmd.steering = msg->steering;
+    car_ros_vec_[vehicle_idx].vel_cmd.brake = msg->brake;
+    car_ros_vec_[vehicle_idx].has_vel_cmd = true;
+}
+
+nav_msgs::Odometry AirsimROSWrapper::get_odom_msg_from_airsim_state(const msr::airlib::CarApiBase::CarState& car_state) const
+{
+    nav_msgs::Odometry odom_ned_msg;
+    //odom_ned_msg.header.frame_id = world_frame_id_; //it is already claimed outside this function
+    //odom_ned_msg.child_frame_id = "/airsim/odom_local_ned"; // todo make param
+
+    odom_ned_msg.pose.pose.position.x = car_state.kinematics_estimated.pose.position.x();
+    odom_ned_msg.pose.pose.position.y = car_state.kinematics_estimated.pose.position.y();
+    odom_ned_msg.pose.pose.position.z = car_state.kinematics_estimated.pose.position.z();
+    odom_ned_msg.pose.pose.orientation.x = car_state.kinematics_estimated.pose.orientation.x();
+    odom_ned_msg.pose.pose.orientation.y = car_state.kinematics_estimated.pose.orientation.y();
+    odom_ned_msg.pose.pose.orientation.z = car_state.kinematics_estimated.pose.orientation.z();
+    odom_ned_msg.pose.pose.orientation.w = car_state.kinematics_estimated.pose.orientation.w();
+
+    odom_ned_msg.twist.twist.linear.x = car_state.kinematics_estimated.twist.linear.x();
+    odom_ned_msg.twist.twist.linear.y = car_state.kinematics_estimated.twist.linear.y();
+    odom_ned_msg.twist.twist.linear.z = car_state.kinematics_estimated.twist.linear.z();
+    odom_ned_msg.twist.twist.angular.x = car_state.kinematics_estimated.twist.angular.x();
+    odom_ned_msg.twist.twist.angular.y = car_state.kinematics_estimated.twist.angular.y();
+    odom_ned_msg.twist.twist.angular.z = car_state.kinematics_estimated.twist.angular.z();
+
+    return odom_ned_msg;
 }
 
 // void AirsimROSWrapper::vel_cmd_body_frame_cb(const airsim_ros_pkgs::VelCmd& msg, const std::string& vehicle_name)
@@ -369,7 +425,33 @@ sensor_msgs::Imu AirsimROSWrapper::get_imu_msg_from_airsim(const msr::airlib::Im
     return imu_msg;
 }
 
+void AirsimROSWrapper::publish_odom_tf(const nav_msgs::Odometry& odom_ned_msg)
+{
+    geometry_msgs::TransformStamped odom_tf;
+    odom_tf.header = odom_ned_msg.header;
+    odom_tf.child_frame_id = odom_ned_msg.child_frame_id; 
+    odom_tf.transform.translation.x = odom_ned_msg.pose.pose.position.x;
+    odom_tf.transform.translation.y = odom_ned_msg.pose.pose.position.y;
+    odom_tf.transform.translation.z = odom_ned_msg.pose.pose.position.z;
+    odom_tf.transform.rotation.x = odom_ned_msg.pose.pose.orientation.x;
+    odom_tf.transform.rotation.y = odom_ned_msg.pose.pose.orientation.y;
+    odom_tf.transform.rotation.z = odom_ned_msg.pose.pose.orientation.z;
+    odom_tf.transform.rotation.w = odom_ned_msg.pose.pose.orientation.w;
+    tf_broadcaster_.sendTransform(odom_tf);
+}
 
+sensor_msgs::NavSatFix AirsimROSWrapper::get_gps_msg_from_airsim(const msr::airlib::GpsBase::Output& gps_data)
+{
+    sensor_msgs::NavSatFix gps_msg;
+    gps_msg.latitude = gps_data.gnss.geo_point.latitude;
+    gps_msg.longitude = gps_data.gnss.geo_point.longitude; 
+    gps_msg.altitude = gps_data.gnss.geo_point.altitude;
+    gps_msg.header.stamp = make_ts(gps_data.time_stamp);
+    //std::cout<< "Before NavSatFix out"<<std::endl;
+    return gps_msg;
+}
+
+//this is only used to get the origin
 airsim_ros_pkgs::GPSYaw AirsimROSWrapper::get_gps_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const
 {
     airsim_ros_pkgs::GPSYaw gps_msg;
@@ -379,14 +461,14 @@ airsim_ros_pkgs::GPSYaw AirsimROSWrapper::get_gps_msg_from_airsim_geo_point(cons
     return gps_msg;
 }
 
-sensor_msgs::NavSatFix AirsimROSWrapper::get_gps_sensor_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const
-{
-    sensor_msgs::NavSatFix gps_msg;
-    gps_msg.latitude = geo_point.latitude;
-    gps_msg.longitude = geo_point.longitude; 
-    gps_msg.altitude = geo_point.altitude;
-    return gps_msg;
-}
+// sensor_msgs::NavSatFix AirsimROSWrapper::get_gps_sensor_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const
+// {
+//     sensor_msgs::NavSatFix gps_msg;
+//     gps_msg.latitude = geo_point.latitude;
+//     gps_msg.longitude = geo_point.longitude; 
+//     gps_msg.altitude = geo_point.altitude;
+//     return gps_msg;
+// }
 
 // todo unused
 // void AirsimROSWrapper::set_zero_vel_cmd()
@@ -400,7 +482,7 @@ sensor_msgs::NavSatFix AirsimROSWrapper::get_gps_sensor_msg_from_airsim_geo_poin
 
 //     // todo make class member or a fucntion 
 //     double roll, pitch, yaw;
-//     tf2::Matrix3x3(get_tf2_quat(curr_drone_state_.kinematics_estimated.pose.orientation)).getRPY(roll, pitch, yaw); // ros uses xyzw
+//     tf2::Matrix3x3(get_tf2_quat(curr_car_state_.kinematics_estimated.pose.orientation)).getRPY(roll, pitch, yaw); // ros uses xyzw
 //     vel_cmd_.yaw_mode.yaw_or_rate = yaw;
 // }
 
@@ -415,18 +497,36 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         // iterate over drones
         for (auto& car_ros: car_ros_vec_)
         {
-            // get drone state from airsim
+            // get car state from airsim
             std::unique_lock<std::recursive_mutex> lck(car_control_mutex_);
             car_ros.curr_car_state = airsim_client_.getCarState(car_ros.vehicle_name);
             lck.unlock();
             ros::Time curr_ros_time = ros::Time::now();
 
-            //car_ros.gps_sensor_msg = get_gps_sensor_msg_from_airsim_geo_point(car_ros.curr_car_state.gps_location);
-            //car_ros.gps_sensor_msg.header.stamp = curr_ros_time;
+            // convert airsim drone state to ROS msgs
+            car_ros.curr_odom_ned = get_odom_msg_from_airsim_state(car_ros.curr_car_state);
+            car_ros.curr_odom_ned.header.frame_id = car_ros.vehicle_name;
+            car_ros.curr_odom_ned.child_frame_id = car_ros.odom_frame_id;
+            car_ros.curr_odom_ned.header.stamp = curr_ros_time;
 
-            car_ros.global_gps_pub.publish(car_ros.gps_sensor_msg);
+            // publish to ROS!  
+            car_ros.odom_local_ned_pub.publish(car_ros.curr_odom_ned);
+            publish_odom_tf(car_ros.curr_odom_ned);
 
+            // send control commands from the last callback to airsim
+            if (car_ros.has_vel_cmd)
+            {
+                //the vel_cmd here is control commands for cars; not velocities.
+                std::unique_lock<std::recursive_mutex> lck(car_control_mutex_);
+                msr::airlib::CarApiBase::CarControls controls;
+                controls.throttle = car_ros.vel_cmd.throttle;
+                controls.steering = car_ros.vel_cmd.steering;
+                controls.brake = car_ros.vel_cmd.brake;
+                airsim_client_.setCarControls(controls);
+                lck.unlock();
+            }
             // "clear" control cmds
+            car_ros.has_vel_cmd = false;
         }
 
         // IMUS
@@ -438,14 +538,34 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
                 std::unique_lock<std::recursive_mutex> lck(car_control_mutex_);
                 auto imu_data = airsim_client_.getImuData(vehicle_imu_pair.second, vehicle_imu_pair.first);
                 lck.unlock();
+                //std::cout<<"reading imu data"<<std::endl;
                 sensor_msgs::Imu imu_msg = get_imu_msg_from_airsim(imu_data);
-                imu_msg.header.frame_id = vehicle_imu_pair.first;
+                //should the frame_id be the local link of a car
+                imu_msg.header.frame_id = vehicle_imu_pair.first+"/odom_local_ned";
                 // imu_msg.header.stamp = ros::Time::now();
                 imu_pub_vec_[ctr].publish(imu_msg);
                 ctr++;
             } 
         }
-
+        // GPSs
+        if (gps_pub_vec_.size() > 0)
+        {
+            int ctr = 0;
+            for (const auto& vehicle_gps_pair: vehicle_gps_map_)
+            {
+                std::unique_lock<std::recursive_mutex> lck(car_control_mutex_);
+                auto gps_data = airsim_client_.getGpsData(vehicle_gps_pair.second, vehicle_gps_pair.first);
+                lck.unlock();
+                //std::cout<<"reading gps data"<<std::endl;
+                sensor_msgs::NavSatFix gps_msg = get_gps_msg_from_airsim(gps_data);
+                //should the frame_id be the static base_link of a car or the odometry link
+                gps_msg.header.frame_id = vehicle_gps_pair.first+"/odom_local_ned";
+                // gps_msg.header.frame_id = world_frame_id_;
+                // gps_msg.header.stamp = ros::Time::now();
+                gps_pub_vec_[ctr].publish(gps_msg);
+                ctr++;
+            } 
+        }
         if (static_tf_msg_vec_.size() > 0)
         {
             for (auto& static_tf_msg : static_tf_msg_vec_)
