@@ -1,3 +1,12 @@
 [submodule "ros/src/orb_slam_2_ros"]
 	path = ros/src/orb_slam_2_ros
 	url = git@github.com:doublestrong/orb_slam_2_ros.git
+[submodule "ros/src/cartographer"]
+	path = ros/src/cartographer
+	url = https://github.com/googlecartographer/cartographer.git
+[submodule "ros/src/cartographer_ros"]
+	path = ros/src/cartographer_ros
+	url = https://github.com/googlecartographer/cartographer_ros.git
+[submodule "ros/src/ceres-solver"]
+	path = ros/src/ceres-solver
+	url = https://ceres-solver.googlesource.com/ceres-solver.git
