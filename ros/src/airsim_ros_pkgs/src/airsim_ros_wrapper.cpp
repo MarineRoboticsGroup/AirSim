@@ -282,18 +282,18 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
 }
 
 ros::Time AirsimROSWrapper::make_ts(uint64_t unreal_ts) {
-    if (first_imu_unreal_ts < 0) {
-        first_imu_unreal_ts = unreal_ts;
-        first_imu_ros_ts = ros::Time::now();
+    if (first_unreal_ts_ < 0) {
+        first_unreal_ts_ = unreal_ts;
+        first_ros_ts_ = ros::Time::now();
     }
     //std::cout <<"unreal time:" << unreal_ts << std::endl;
-    //std::cout <<"first_imu_unreal_ts:" << first_imu_unreal_ts << std::endl;
-    //it possible that first_imu_unreal_ts may not be the fisrt unreal time stamp
-    if (unreal_ts > first_imu_unreal_ts){
-        return  first_imu_ros_ts + ros::Duration( (unreal_ts - first_imu_unreal_ts)/1e9);
+    //std::cout <<"first_unreal_ts_:" << first_unreal_ts_ << std::endl;
+    //it possible that first_unreal_ts_ may not be the fisrt unreal time stamp
+    if (unreal_ts > first_unreal_ts_){
+        return  first_ros_ts_ + ros::Duration( (unreal_ts - first_unreal_ts_)/1e9);
     }
     else{
-        return  first_imu_ros_ts - ros::Duration( (- unreal_ts + first_imu_unreal_ts)/1e9);
+        return  first_ros_ts_ - ros::Duration( (- unreal_ts + first_unreal_ts_)/1e9);
     }
 }
 
@@ -492,6 +492,9 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
     {
         std::lock_guard<std::recursive_mutex> guard(car_control_mutex_);
 
+        bool having_earliest_ros_time = false;
+        ros::Time earliest_ros_time;
+
         // todo this is global origin
         origin_geo_point_pub_.publish(origin_geo_point_msg_);
         // iterate over drones
@@ -501,8 +504,11 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
             std::unique_lock<std::recursive_mutex> lck(car_control_mutex_);
             car_ros.curr_car_state = airsim_client_.getCarState(car_ros.vehicle_name);
             lck.unlock();
-            ros::Time curr_ros_time = ros::Time::now();
-
+            ros::Time curr_ros_time = make_ts(car_ros.curr_car_state.timestamp);
+            if (having_earliest_ros_time == false){
+                earliest_ros_time = curr_ros_time;
+                having_earliest_ros_time = true;
+            }
             // convert airsim drone state to ROS msgs
             car_ros.curr_odom_ned = get_odom_msg_from_airsim_state(car_ros.curr_car_state);
             car_ros.curr_odom_ned.header.frame_id = car_ros.vehicle_name;
@@ -542,7 +548,6 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
                 sensor_msgs::Imu imu_msg = get_imu_msg_from_airsim(imu_data);
                 //should the frame_id be the local link of a car
                 imu_msg.header.frame_id = vehicle_imu_pair.first+"/odom_local_ned";
-                // imu_msg.header.stamp = ros::Time::now();
                 imu_pub_vec_[ctr].publish(imu_msg);
                 ctr++;
             } 
@@ -561,7 +566,6 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
                 //should the frame_id be the static base_link of a car or the odometry link
                 gps_msg.header.frame_id = vehicle_gps_pair.first+"/odom_local_ned";
                 // gps_msg.header.frame_id = world_frame_id_;
-                // gps_msg.header.stamp = ros::Time::now();
                 gps_pub_vec_[ctr].publish(gps_msg);
                 ctr++;
             } 
@@ -570,7 +574,7 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
         {
             for (auto& static_tf_msg : static_tf_msg_vec_)
             {
-                static_tf_msg.header.stamp = ros::Time::now();
+                static_tf_msg.header.stamp = earliest_ros_time;
                 static_tf_pub_.sendTransform(static_tf_msg);
             }
 
@@ -658,7 +662,7 @@ void AirsimROSWrapper::append_static_vehicle_tf(const std::string& vehicle_name,
 {
     geometry_msgs::TransformStamped vehicle_tf_msg;
     vehicle_tf_msg.header.frame_id = world_frame_id_;
-    vehicle_tf_msg.header.stamp = ros::Time::now();
+    //vehicle_tf_msg.header.stamp = ros::Time::now();
     vehicle_tf_msg.child_frame_id = vehicle_name;
     vehicle_tf_msg.transform.translation.x = vehicle_setting.position.x();
     vehicle_tf_msg.transform.translation.y = vehicle_setting.position.y();
@@ -769,7 +773,7 @@ void AirsimROSWrapper::lidar_timer_cb(const ros::TimerEvent& event)
                 lck.unlock();
                 sensor_msgs::PointCloud2 lidar_msg = get_lidar_msg_from_airsim(lidar_data); // todo make const ptr msg to avoid copy
                 lidar_msg.header.frame_id = vehicle_lidar_pair.second; // sensor frame name. todo add to doc
-                lidar_msg.header.stamp = ros::Time::now();
+                lidar_msg.header.stamp = make_ts(lidar_data.time_stamp);//lidar time stamp from unreal engine
                 lidar_pub_vec_[ctr].publish(lidar_msg);
                 ctr++;
             } 
@@ -803,7 +807,7 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_img_msg_from_response(const ImageRes
     sensor_msgs::ImagePtr img_msg_ptr = boost::make_shared<sensor_msgs::Image>();
     img_msg_ptr->data = img_response.image_data_uint8;
     img_msg_ptr->step = img_response.width * 3; // todo un-hardcode. image_width*num_bytes
-    img_msg_ptr->header.stamp = make_ts(img_response.time_stamp);
+    img_msg_ptr->header.stamp = curr_ros_time;//make_ts(img_response.time_stamp);
     img_msg_ptr->header.frame_id = frame_id;
     img_msg_ptr->height = img_response.height;
     img_msg_ptr->width = img_response.width;
@@ -822,7 +826,7 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_depth_img_msg_from_response(const Im
     // hence the dependency on opencv and cv_bridge. however, this is an extremely fast op, so no big deal.
     cv::Mat depth_img = manual_decode_depth(img_response);
     sensor_msgs::ImagePtr depth_img_msg = cv_bridge::CvImage(std_msgs::Header(), "32FC1", depth_img).toImageMsg();
-    depth_img_msg->header.stamp = make_ts(img_response.time_stamp);
+    depth_img_msg->header.stamp = curr_ros_time;//make_ts(img_response.time_stamp);
     depth_img_msg->header.frame_id = frame_id;
     return depth_img_msg;
 }
@@ -851,7 +855,7 @@ sensor_msgs::CameraInfo AirsimROSWrapper::generate_cam_info(const std::string& c
 void AirsimROSWrapper::process_and_publish_img_response(const std::vector<ImageResponse>& img_response_vec, const int img_response_idx, const std::string& vehicle_name)
 {    
     // todo add option to use airsim time (image_response.TTimePoint) like Gazebo /use_sim_time param
-    ros::Time curr_ros_time = ros::Time::now(); 
+    ros::Time curr_ros_time; 
     int img_response_idx_internal = img_response_idx;
 
     for (const auto& curr_img_response : img_response_vec)
@@ -862,6 +866,7 @@ void AirsimROSWrapper::process_and_publish_img_response(const std::vector<ImageR
 
         // todo publishing a tf for each capture type seems stupid. but it foolproofs us against render thread's async stuff, I hope. 
         // Ideally, we should loop over cameras and then captures, and publish only one tf.  
+        curr_ros_time = make_ts(curr_img_response.time_stamp);
         publish_camera_tf(curr_img_response, curr_ros_time, vehicle_name, curr_img_response.camera_name);
 
         // todo simGetCameraInfo is wrong + also it's only for image type -1.  

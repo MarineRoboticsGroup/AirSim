@@ -98,8 +98,8 @@ public:
     bool is_used_lidar_timer_cb_queue_;
     bool is_used_img_timer_cb_queue_;
 
-    ros::Time first_imu_ros_ts;
-    int64_t first_imu_unreal_ts = -1;
+    ros::Time first_ros_ts_;
+    int64_t first_unreal_ts_ = -1;
 
 private:
     /// ROS timer callbacks
