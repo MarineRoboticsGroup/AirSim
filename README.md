@@ -1,7 +1,13 @@
-This is a fork of the original AisSim. Modifications were made in the ros folder to make the wrapper work for cars in ROS. The original package only provides a wrapper for drones which cannot be used to extract data to ROS. With the modifications, you will have access to LIDAR scan, RBGD camera data, IMU data, GPS, and ground truth odometry in ROS. Please follow the guideline in the original package to build, install and use Unreal Engine, AirSim and the ROS wrapper. The only different things you need to do are to clone my fork and move a setting file, ros/src/airsim_ros_pkgs/setting/setting.json, to ~/Documents/AirSim/. If you get all the installation and setting correctly, you need to PLAY the car in UE4Editor and move it with arrow keys, and then roslaunch airsim_ros_pkgs airsim_node.launch to get all the data.
-[![RViz and UE4Editor](ros/src/airsim_ros_pkgs/docs/ros_unreal_airsim.png)]
-[![Resultant ROS tf tree](ros/src/airsim_ros_pkgs/docs/ros_tf_tree_airsim.png)]
-[![Resultant ROS topics](ros/src/airsim_ros_pkgs/docs/ros_topics_airsim.png)]
+This is a fork of the original AirSim. Modifications were made in the ros folder to make the wrapper work for cars in ROS. The original package only provides a wrapper for drones which cannot be used to extract data for car simulations. With the modifications, your ROS will have access to LIDAR scan, RBGD camera data, IMU data, GPS, and ground truth odometry on a car simulated in Unreal Engine. Please follow the guideline in the original package to build, install and use Unreal Engine, AirSim and the ROS wrapper. The only different things you need to do are to clone my repo and move a setting file, ros/src/airsim_ros_pkgs/setting/setting.json, to ~/Documents/AirSim/. If you get all the installation and setting correctly, you can PLAY the car simulation in UE4Editor and move it with arrow keys, and then roslaunch airsim_ros_pkgs airsim_node.launch to get all the data.
+
+RViz and UE4Editor
+![RViz and UE4Editor](ros/src/airsim_ros_pkgs/docs/ros_unreal_airsim.png)
+
+Resultant ROS tf tree
+![Resultant ROS tf tree](ros/src/airsim_ros_pkgs/docs/ros_tf_tree_airsim.png)
+
+Resultant ROS topics
+![Resultant ROS topics](ros/src/airsim_ros_pkgs/docs/ros_topics_airsim.png)
 
 # Welcome to AirSim
 
