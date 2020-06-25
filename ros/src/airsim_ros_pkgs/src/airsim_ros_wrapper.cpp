@@ -55,9 +55,9 @@ void AirsimROSWrapper::initialize_airsim()
         airsim_client_images_.confirmConnection();
         airsim_client_lidar_.confirmConnection();
 
+        nh_private_.getParam("auto_control",auto_control_);
         for (const auto& vehicle_name : vehicle_names_)
         {
-            nh_private_.getParam("auto_control",auto_control_);
             airsim_client_.enableApiControl(false, vehicle_name); // todo expose as rosservice?
             if(auto_control_){
                 airsim_client_.enableApiControl(true, vehicle_name);       
@@ -319,7 +319,6 @@ void AirsimROSWrapper::vel_cmd_body_frame_cb(const airsim_ros_pkgs::VelCmd::Cons
     std::lock_guard<std::recursive_mutex> guard(car_control_mutex_);
 
     int vehicle_idx = vehicle_name_idx_map_[vehicle_name];
-
     // todo do actual body frame?
     car_ros_vec_[vehicle_idx].vel_cmd.throttle = msg->throttle;
     car_ros_vec_[vehicle_idx].vel_cmd.steering = msg->steering;
@@ -528,7 +527,8 @@ void AirsimROSWrapper::car_state_timer_cb(const ros::TimerEvent& event)
                 controls.throttle = car_ros.vel_cmd.throttle;
                 controls.steering = car_ros.vel_cmd.steering;
                 controls.brake = car_ros.vel_cmd.brake;
-                airsim_client_.setCarControls(controls);
+    //std::cout<<car_ros.vehicle_name.c_str()<<" throttle: "<<controls.throttle<<" steerring: "<<controls.steering <<std::endl;                
+                airsim_client_.setCarControls(controls, car_ros.vehicle_name);
                 lck.unlock();
             }
             // "clear" control cmds
